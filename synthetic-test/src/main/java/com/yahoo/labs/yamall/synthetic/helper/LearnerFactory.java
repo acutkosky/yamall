@@ -37,6 +37,17 @@ public class LearnerFactory {
             l.setLearningRate(learningRate);
 
             learner = l;
+        } else if ( method .compareToIgnoreCase("META_BETTING") == 0) {
+            boolean scaling = Boolean.parseBoolean(properties.getProperty("scaling", "false"));
+            boolean wscaling = Boolean.parseBoolean(properties.getProperty("wscaling", "true"));
+
+            System.out.println( "META BETTING learning rate: " + learningRate);
+
+            MetaBetting l = new MetaBetting(bitsHash);
+            l.useWeightScaling(wscaling);
+            l.setLearningRate(learningRate);
+
+            learner = l;
         } else if ( method .compareToIgnoreCase("DENSE_FREE_REX") == 0) {
             boolean scaling = Boolean.parseBoolean(properties.getProperty("scaling", "false"));
             boolean wscaling = Boolean.parseBoolean(properties.getProperty("wscaling", "true"));
@@ -61,12 +72,14 @@ public class LearnerFactory {
             learner = l;
         } else if ( method .compareToIgnoreCase("SVRG_FR") == 0) {
             int batchSize = Integer.parseInt(properties.getProperty("batchsize", "1000"));
+            double reg = Double.parseDouble(properties.getProperty("regularization", "0.0"));
 
             System.out.println( "SVRG_FR learning rate: " + learningRate);
 
             PerCoordinateSVRG l = new PerCoordinateSVRG(bitsHash);
             l.setBatchSize(batchSize);
             l.setLearningRate(learningRate);
+            l.setRegularizationScaling(reg);
 
             learner = l;
         } else if ( method .compareToIgnoreCase("DENSE_SVRG") == 0) {
