@@ -1,17 +1,19 @@
 # learner parameters
 method=SGD_VW
-lr=0.1
+lr=1.0
 
 # run
-threads=10
-repetitions=10
-evalPeriod=1000
+threads=1
+repetitions=1
+evalPeriod=10000
 
 # data generation
 train_size=10000000
 test_size=50000
 
-data_type=default
+data_type=file
+train_file=/Users/acutkosky/projects/data/unzipped/shuffled_train.txt
+test_file=/Users/acutkosky/projects/data/unzipped/test_100000.txt
 dimension=1000
 sparsity=100
 
