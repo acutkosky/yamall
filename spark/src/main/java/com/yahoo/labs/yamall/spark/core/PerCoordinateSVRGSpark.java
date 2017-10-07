@@ -13,6 +13,8 @@ import org.apache.spark.api.java.JavaFutureAction;
 import org.apache.spark.api.java.JavaRDD;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -124,9 +126,42 @@ public class PerCoordinateSVRGSpark extends PerCoordinateSVRG implements Learner
 
         //input.persist(StorageLevel.MEMORY_AND_DISK());
         JavaRDD<Instance> inputInstances = input.map(new StringToYamallInstance(bitsHash));
+
+        //get batch/sgd phase sizes
+        long count = 0;
+        long precomputedSGDIter = 0;
+        ArrayList<Double> phaseSizes = new ArrayList<Double>();
+        long burnInLength = getBurnInLength();
+        phaseSizes.add((double)burnInLength);
+        precomputedSGDIter += burnInLength;
+        count += burnInLength;
+        while(count < sampleSize) {
+            //account for batch phase
+            long currentBatchSize = Math.max(batchSize, precomputedSGDIter);
+            phaseSizes.add((double) currentBatchSize);
+            count += currentBatchSize;
+
+            //account for SGD phase
+            long currentSGDSize = batchSize;
+
+            phaseSizes.add((double)currentSGDSize);
+            count += currentSGDSize;
+        }
+
+        double [] phaseSizeArray = new double[phaseSizes.size()];
+        {
+            int i = 0;
+            for (Iterator<Double> it = phaseSizes.iterator(); it.hasNext(); ) {
+                phaseSizeArray[i] = it.next();
+            }
+        }
+
+        JavaRDD<Instance>[] phaseSplits = inputInstances.randomSplit(phaseSizeArray);
+
+
         //inputInstances.persist(StorageLevel.MEMORY_AND_DISK());
 
-
+        int phaseIndex = 0;
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
         // burn in
         strb.append("--- Burn-in starts (" +getBurnInLength() + ")\n");
@@ -136,13 +171,15 @@ public class PerCoordinateSVRGSpark extends PerCoordinateSVRG implements Learner
         double burnInFraction = (1.0 * getBurnInLength() ) / (double) sampleSize;
         numSamples += getBurnInLength();
         double burninCumLoss = 0.0;
-        List<Instance> inMemorySamples = inputInstances.sample(false, burnInFraction).collect();
+        List<Instance> inMemorySamples = phaseSplits[phaseIndex].collect();//inputInstances.sample(false, burnInFraction).collect();
         for(Instance sample : inMemorySamples) {
             updateFeatureCounts(sample);
             double score = this.updateBurnIn(sample);
             burninCumLoss += getLoss().lossValue(score, sample.getLabel()) * sample.getWeight();
         }
         endBurnInPhase();
+        phaseIndex++;
+
         strb.append("--- Burn-in is ready, sample size: " + inMemorySamples.size() + "\n--- cummulative loss: " + (burninCumLoss / (double) inMemorySamples.size())  + "\n" );
         saveLog();
         ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -155,12 +192,16 @@ public class PerCoordinateSVRGSpark extends PerCoordinateSVRG implements Learner
             saveLog();
 
             double sgdFraction = (1.0 * batchSize ) / (double) sampleSize;
-            JavaFutureAction<List<Instance>> sgdInmemoryFutureAction = inputInstances.sample(false, sgdFraction).collectAsync();
+            JavaFutureAction<List<Instance>> sgdInmemoryFutureAction = phaseSplits[phaseIndex+1].collectAsync();//inputInstances.sample(false, sgdFraction).collectAsync();
+
 
             ////////////////////////////////////////////////////////////////////////////////////////////////////////////
             // compute gradient
             fraction = Math.min((getBatchLength()) / ((double) sampleSize),1.0);
-            JavaRDD<Instance> subsamp = inputInstances.sample(false, fraction);
+            JavaRDD<Instance> subsamp = phaseSplits[phaseIndex];//inputInstances.sample(false, fraction);
+            phaseIndex += 2;
+
+
 
             double[] prev_w = this.baseLearner.getDenseWeights();
             BatchGradient.BatchGradientData batchgradient = BatchGradient.computeGradient(subsamp,bitsHash,prev_w);
